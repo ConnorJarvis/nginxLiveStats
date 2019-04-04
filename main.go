@@ -6,19 +6,23 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 func main() {
-	lastRun = 0
+	lastRun = make(map[string]int64)
+	userCount = make(map[string]int)
 	http.HandleFunc("/livecount", streamStats)
 	if err := http.ListenAndServe(":8092", nil); err != nil {
 		panic(err)
 	}
 }
 
-var lastRun int64
-var userCount int
+var lastRun map[string]int64
+var lastRunMutex sync.RWMutex
+var userCount map[string]int
+var userCountMutex sync.RWMutex
 
 func countLiveUsers(id string) int {
 	file, _ := os.Open("/var/log/nginx/access.log")
@@ -43,12 +47,19 @@ func countLiveUsers(id string) int {
 func streamStats(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id != "" {
-		if (time.Now().Unix() - lastRun) > 10 {
-			lastRun = time.Now().Unix()
-			userCount = countLiveUsers(id)
+		lastRunMutex.RLock()
+		defer lastRunMutex.RUnlock()
+		if (time.Now().Unix() - lastRun[id]) > 10 {
+			lastRunMutex.Lock()
+			defer lastRunMutex.Unlock()
+			lastRun[id] = time.Now().Unix()
+			userCountMutex.Lock()
+			defer userCountMutex.Unlock()
+			userCount[id] = countLiveUsers(id)
 		}
-
-		message := strconv.Itoa(userCount)
+		userCountMutex.RLock()
+		defer userCountMutex.RUnlock()
+		message := strconv.Itoa(userCount[id])
 		w.Write([]byte(message))
 	} else {
 		w.Write([]byte("No ID specified"))
