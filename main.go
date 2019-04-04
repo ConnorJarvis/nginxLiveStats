@@ -48,18 +48,19 @@ func streamStats(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id != "" {
 		lastRunMutex.RLock()
-		defer lastRunMutex.RUnlock()
-		if (time.Now().Unix() - lastRun[id]) > 10 {
+		lastRunTime := lastRun[id]
+		lastRunMutex.RUnlock()
+		if (time.Now().Unix() - lastRunTime) > 10 {
 			lastRunMutex.Lock()
-			defer lastRunMutex.Unlock()
 			lastRun[id] = time.Now().Unix()
+			lastRunMutex.Unlock()
 			userCountMutex.Lock()
-			defer userCountMutex.Unlock()
 			userCount[id] = countLiveUsers(id)
+			userCountMutex.Unlock()
 		}
 		userCountMutex.RLock()
-		defer userCountMutex.RUnlock()
 		message := strconv.Itoa(userCount[id])
+		userCountMutex.RUnlock()
 		w.Write([]byte(message))
 	} else {
 		w.Write([]byte("No ID specified"))
